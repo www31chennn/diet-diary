@@ -1,0 +1,22 @@
+# Next.js
+.next/
+out/
+
+# 環境變數（絕對不能推上去！）
+.env
+.env.local
+.env.*.local
+
+# Node modules
+node_modules/
+
+# 系統檔案
+.DS_Store
+Thumbs.db
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
