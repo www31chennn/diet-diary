@@ -9,37 +9,57 @@ function getDriveClient(accessToken: string) {
 }
 
 async function getOrCreateFolder(drive: ReturnType<typeof google.drive>): Promise<string> {
-  // 搜尋現有資料夾，取最舊的那個
   const res = await drive.files.list({
     q: `name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: 'files(id, name, createdTime)',
+    fields: 'files(id, createdTime)',
     spaces: 'drive',
     orderBy: 'createdTime',
   })
 
-  if (res.data.files && res.data.files.length > 0) {
-    return res.data.files[0].id!
+  const folders = res.data.files ?? []
+
+  if (folders.length === 0) {
+    // 建立新資料夾
+    const folder = await drive.files.create({
+      requestBody: { name: FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
+      fields: 'id',
+    })
+    console.log(`[Drive] Created folder`)
+    return folder.data.id!
   }
 
-  // 建立資料夾前再查一次（避免競爭條件）
-  const recheck = await drive.files.list({
-    q: `name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: 'files(id)',
-    spaces: 'drive',
-  })
-  if (recheck.data.files && recheck.data.files.length > 0) {
-    return recheck.data.files[0].id!
+  const primaryId = folders[0].id!
+
+  // 有多餘資料夾：把檔案移進主資料夾，再刪除多餘的
+  if (folders.length > 1) {
+    console.log(`[Drive] Found ${folders.length} folders, merging...`)
+    for (const extra of folders.slice(1)) {
+      try {
+        // 找出多餘資料夾裡的檔案
+        const files = await drive.files.list({
+          q: `'${extra.id}' in parents and trashed=false`,
+          fields: 'files(id, name)',
+        })
+        for (const file of files.data.files ?? []) {
+          // 移到主資料夾
+          await drive.files.update({
+            fileId: file.id!,
+            addParents: primaryId,
+            removeParents: extra.id!,
+            fields: 'id',
+          })
+          console.log(`[Drive] Moved ${file.name} to primary folder`)
+        }
+        // 刪除多餘資料夾
+        await drive.files.delete({ fileId: extra.id! })
+        console.log(`[Drive] Deleted duplicate folder ${extra.id}`)
+      } catch (e) {
+        console.error(`[Drive] Failed to merge folder ${extra.id}:`, e)
+      }
+    }
   }
 
-  const folder = await drive.files.create({
-    requestBody: {
-      name: FOLDER_NAME,
-      mimeType: 'application/vnd.google-apps.folder',
-    },
-    fields: 'id',
-  })
-  console.log(`[Drive] Created folder: ${FOLDER_NAME}`)
-  return folder.data.id!
+  return primaryId
 }
 
 export async function readDriveFile(accessToken: string, filename: string): Promise<unknown> {
@@ -59,7 +79,6 @@ export async function readDriveFile(accessToken: string, filename: string): Prom
       { fileId: res.data.files[0].id!, alt: 'media' },
       { responseType: 'text' }
     )
-    console.log(`[Drive] Read OK: ${filename}`)
     return JSON.parse(content.data as string)
   } catch (e) {
     console.error(`[Drive] Read error for ${filename}:`, e)
@@ -90,7 +109,6 @@ export async function writeDriveFile(accessToken: string, filename: string, data
         fields: 'id',
       })
     }
-    console.log(`[Drive] Write OK: ${filename}`)
   } catch (e) {
     console.error(`[Drive] Write error for ${filename}:`, e)
     throw e
