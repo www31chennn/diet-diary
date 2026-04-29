@@ -43,7 +43,7 @@ export const authOptions: NextAuthOptions = {
             'https://www.googleapis.com/auth/drive.file',
           ].join(' '),
           access_type: 'offline',
-          prompt: 'consent',
+          prompt: 'select_account consent',
         },
       },
     }),
@@ -52,11 +52,15 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, account }) {
       // 第一次登入
       if (account) {
+        // 確認 drive.file scope 有被授權
+        const scope = account.scope ?? ''
+        const hasDriveScope = scope.includes('drive')
         return {
           ...token,
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
           expiresAt: account.expires_at,
+          hasDriveScope,
         }
       }
 
@@ -72,8 +76,8 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string
+      ;(session as any).hasDriveScope = token.hasDriveScope ?? true
       if (token.error) {
-        // 刷新失敗，讓前端知道需要重新登入
         (session as any).error = token.error
       }
       return session

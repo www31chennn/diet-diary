@@ -23,11 +23,12 @@ const TABS = [
 const NO_SHELL = ['/login']
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const pathname = usePathname()
   const router = useRouter()
-  const { settings, setSettings } = useSettings()
+  const { settings, setSettings, driveError } = useStore()
   const [showSettings, setShowSettings] = useState(false)
+  // 有 driveError 時不允許開設定
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [apiKey, setApiKey] = useState('')
 
@@ -78,8 +79,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 hidden sm:block">{today}</span>
             <button onClick={() => setShowSettings(true)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-100 transition-colors">
-              <Settings size={15} className="text-slate-500" />
+              className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-100 transition-colors" disabled={!!driveError}>
+              <Settings size={15} className={driveError ? "text-slate-300" : "text-slate-500"} />
             </button>
           </div>
         </div>
@@ -103,11 +104,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* 主要內容 - settings/onboarding 以 modal 呈現，children 始終渲染 */}
       <main className="flex-1 pb-safe">
-        {children}
+        {status === 'loading' ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="w-6 h-6 rounded-full border-2 border-brand-300 border-t-brand-600 animate-spin" />
+          </div>
+        ) : driveError === 'NO_DRIVE_PERMISSION' ? (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center space-y-4">
+            <div className="text-4xl">🔒</div>
+            <div>
+              <p className="font-semibold text-slate-700 text-lg mb-1">需要 Google Drive 權限</p>
+              <p className="text-sm text-slate-500">您在登入時未授權 Drive 存取，資料無法儲存。<br/>請重新登入並允許 Drive 權限。</p>
+            </div>
+            <button onClick={() => { window.location.href = '/api/auth/signin/google?callbackUrl=/' }}
+              className="btn-primary px-6 py-3 text-sm">
+              重新登入並授權
+            </button>
+            <button onClick={() => signOut({ callbackUrl: '/login' })}
+              className="text-xs text-slate-400 underline">
+              登出
+            </button>
+          </div>
+        ) : children}
       </main>
 
       {/* Settings Modal */}
-      {(showSettings || isSettingsPage) && (
+      {!driveError && (showSettings || isSettingsPage) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
           onClick={() => { setShowSettings(false); if (isSettingsPage) router.back() }}>
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto"
