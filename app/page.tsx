@@ -303,7 +303,7 @@ export default function HomePage() {
               <div className="flex gap-2">
                 <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-surface-200 text-sm text-slate-600 cursor-pointer active:bg-surface-50">
                   <Camera size={14}/> 上傳或拍照辨識
-                  <input type="file" accept="image/*" capture="environment" className="hidden"
+                  <input type="file" accept="image/*" className="hidden"
                     onChange={e => e.target.files?.[0] && handleImageSelect(e.target.files[0])} />
                 </label>
                 <button onClick={parseWithAI} disabled={aiLoading||(!aiText.trim()&&!imageBase64)}
