@@ -40,21 +40,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isOnboardingPage = pathname.startsWith('/onboarding')
 
   function update(key: keyof UserSettings, value: string | number) {
-    setSettings(prev => {
-      const next = { ...prev, [key]: value }
-      const bodyKeys = ['height', 'weight', 'age', 'gender', 'targetWeight', 'bmr', 'tdee']
-      if (bodyKeys.includes(key as string)) {
-        const { _summary, ...goals } = calcDailyGoals(next) as any
-        const autoFill: Partial<UserSettings> = {}
-        if (!prev.dailyCalories) autoFill.dailyCalories = goals.dailyCalories
-        if (!prev.dailyProtein) autoFill.dailyProtein = goals.dailyProtein
-        if (!prev.dailyFat) autoFill.dailyFat = goals.dailyFat
-        if (!prev.dailyCarbs) autoFill.dailyCarbs = goals.dailyCarbs
-        if (!prev.dailyWater) autoFill.dailyWater = goals.dailyWater
-        return { ...next, ...autoFill }
-      }
-      return next
-    })
+    // 數字欄位：空字串時存 undefined，避免 0 卡住
+    const textKeys = ['geminiApiKey', 'dietHabits', 'exerciseHabits', 'goals', 'gender']
+    const parsed = textKeys.includes(key as string)
+      ? value
+      : (value === '' || value === 0 ? undefined : +value)
+    setSettings(prev => ({ ...prev, [key]: parsed }))
   }
 
   function resetGoals() {
@@ -159,7 +150,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <p className="text-sm font-semibold text-slate-700 border-b border-surface-100 pb-2">基本資料</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-xs text-slate-500 block mb-1">年齡</label>
-                    <input type="number" className="input" value={settings.age ?? ''} onChange={e => update('age', +e.target.value)} /></div>
+                    <input type="number" className="input" value={settings.age ?? ''} onChange={e => update('age', e.target.value)} /></div>
                   <div><label className="text-xs text-slate-500 block mb-1">性別</label>
                     <div className="flex gap-1.5">
                       {(['female','male'] as const).map(g => (
@@ -171,11 +162,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </div>
                   </div>
                   <div><label className="text-xs text-slate-500 block mb-1">身高 (cm)</label>
-                    <input type="number" className="input" value={settings.height ?? ''} onChange={e => update('height', +e.target.value)} /></div>
+                    <input type="number" className="input" value={settings.height ?? ''} onChange={e => update('height', e.target.value)} /></div>
                   <div><label className="text-xs text-slate-500 block mb-1">目前體重 (kg)</label>
-                    <input type="number" className="input" value={settings.weight ?? ''} onChange={e => update('weight', +e.target.value)} /></div>
+                    <input type="number" className="input" value={settings.weight ?? ''} onChange={e => update('weight', e.target.value)} /></div>
                   <div className="col-span-2"><label className="text-xs text-slate-500 block mb-1">目標體重 (kg)</label>
-                    <input type="number" className="input" value={settings.targetWeight ?? ''} onChange={e => update('targetWeight', +e.target.value)} /></div>
+                    <input type="number" className="input" value={settings.targetWeight ?? ''} onChange={e => update('targetWeight', e.target.value)} /></div>
                 </div>
               </div>
               <div className="space-y-3">
@@ -196,9 +187,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <p className="text-sm font-semibold text-slate-700 border-b border-surface-100 pb-2">INBODY 資訊（選填）</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-xs text-slate-500 block mb-1">BMR (kcal)</label>
-                    <input type="number" className="input" placeholder="參考 InBody" value={settings.bmr ?? ''} onChange={e => update('bmr', +e.target.value)} /></div>
+                    <input type="number" className="input" placeholder="參考 InBody" value={settings.bmr ?? ''} onChange={e => update('bmr', e.target.value)} /></div>
                   <div><label className="text-xs text-slate-500 block mb-1">TDEE (kcal)</label>
-                    <input type="number" className="input" placeholder="參考 InBody" value={settings.tdee ?? ''} onChange={e => update('tdee', +e.target.value)} /></div>
+                    <input type="number" className="input" placeholder="參考 InBody" value={settings.tdee ?? ''} onChange={e => update('tdee', e.target.value)} /></div>
                 </div>
               </div>
               <div className="space-y-3">
@@ -218,15 +209,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <div key={key}><label className="text-xs text-slate-500 block mb-1">{label}</label>
                       <input type="number" className="input" placeholder={placeholder}
                         value={(settings[key as keyof UserSettings] as number) ?? ''}
-                        onChange={e => update(key as keyof UserSettings, +e.target.value)} /></div>
+                        onChange={e => update(key as keyof UserSettings, e.target.value === '' ? '' : +e.target.value)} /></div>
                   ))}
                   <div className="col-span-2"><label className="text-xs text-slate-500 block mb-1">每日喝水目標 (ml)</label>
                     <input type="number" className="input" placeholder="自動計算"
-                      value={settings.dailyWater ?? ''} onChange={e => update('dailyWater', +e.target.value)} /></div>
+                      value={settings.dailyWater ?? ''} onChange={e => update('dailyWater', e.target.value)} /></div>
                 </div>
               </div>
-              <button onClick={() => { setShowSettings(false); if (isSettingsPage) router.push('/') }}
-                className="btn-primary w-full py-3 text-base">儲存並關閉</button>
+              <button onClick={() => {
+                // 儲存時，沒有填的每日目標才自動計算
+                setSettings(prev => {
+                  const { _summary, ...goals } = calcDailyGoals(prev) as any
+                  const autoFill: Partial<UserSettings> = {}
+                  if (!prev.dailyCalories && goals.dailyCalories) autoFill.dailyCalories = goals.dailyCalories
+                  if (!prev.dailyProtein && goals.dailyProtein) autoFill.dailyProtein = goals.dailyProtein
+                  if (!prev.dailyFat && goals.dailyFat) autoFill.dailyFat = goals.dailyFat
+                  if (!prev.dailyCarbs && goals.dailyCarbs) autoFill.dailyCarbs = goals.dailyCarbs
+                  if (!prev.dailyWater && goals.dailyWater) autoFill.dailyWater = goals.dailyWater
+                  return { ...prev, ...autoFill }
+                })
+                setShowSettings(false)
+                if (isSettingsPage) router.push('/')
+              }} className="btn-primary w-full py-3 text-base">儲存並關閉</button>
             </div>
           </div>
         </div>
