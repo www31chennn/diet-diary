@@ -126,8 +126,18 @@ export default function ExercisePage() {
         {/* 記錄日期 */}
         <div>
           <label className="text-xs text-slate-500 block mb-1">記錄日期</label>
-          <input type="date" className="input w-full text-sm" value={date} max={today}
-            onChange={e => setDate(e.target.value)} />
+          <div className="flex items-center gap-1">
+            <button onClick={() => {
+              const prev = new Date(date + 'T00:00:00'); prev.setDate(prev.getDate()-1)
+              setDate(format(prev, 'yyyy-MM-dd'))
+            }} className="w-7 h-9 rounded-lg bg-surface-100 flex items-center justify-center text-slate-500 text-sm active:bg-surface-200 flex-shrink-0">‹</button>
+            <input type="date" className="input min-w-0 flex-1 text-sm" value={date} max={today}
+              onChange={e => setDate(e.target.value)} />
+            <button onClick={() => {
+              const next = new Date(date + 'T00:00:00'); next.setDate(next.getDate()+1)
+              const s = format(next, 'yyyy-MM-dd'); if (s <= today) setDate(s)
+            }} className="w-7 h-9 rounded-lg bg-surface-100 flex items-center justify-center text-slate-500 text-sm active:bg-surface-200 flex-shrink-0">›</button>
+          </div>
         </div>
 
         {/* 其他：自訂名稱 */}
