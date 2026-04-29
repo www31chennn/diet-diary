@@ -126,7 +126,7 @@ export default function ExercisePage() {
         {/* 記錄日期 */}
         <div>
           <label className="text-xs text-slate-500 block mb-1">記錄日期</label>
-          <input type="date" className="input" value={date} max={today}
+          <input type="date" className="input w-full text-sm" value={date} max={today}
             onChange={e => setDate(e.target.value)} />
         </div>
 
