@@ -8,64 +8,75 @@ function getDriveClient(accessToken: string) {
   return google.drive({ version: 'v3', auth })
 }
 
-async function getOrCreateFolder(drive: ReturnType<typeof google.drive>): Promise<string> {
-  const res = await drive.files.list({
-    q: `name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: 'files(id, createdTime)',
-    spaces: 'drive',
-    orderBy: 'createdTime',
-  })
+// 每個 accessToken 只查一次資料夾，避免同時建立多個
+const folderCache = new Map<string, Promise<string>>()
 
-  const folders = res.data.files ?? []
-
-  if (folders.length === 0) {
-    // 建立新資料夾
-    const folder = await drive.files.create({
-      requestBody: { name: FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
-      fields: 'id',
-    })
-    console.log(`[Drive] Created folder`)
-    return folder.data.id!
+async function getOrCreateFolder(drive: ReturnType<typeof google.drive>, accessToken: string): Promise<string> {
+  if (folderCache.has(accessToken)) {
+    return folderCache.get(accessToken)!
   }
 
-  const primaryId = folders[0].id!
+  const promise = (async () => {
+    const res = await drive.files.list({
+      q: `name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      fields: 'files(id, createdTime)',
+      spaces: 'drive',
+      orderBy: 'createdTime',
+    })
 
-  // 有多餘資料夾：把檔案移進主資料夾，再刪除多餘的
-  if (folders.length > 1) {
-    console.log(`[Drive] Found ${folders.length} folders, merging...`)
-    for (const extra of folders.slice(1)) {
-      try {
-        // 找出多餘資料夾裡的檔案
-        const files = await drive.files.list({
-          q: `'${extra.id}' in parents and trashed=false`,
-          fields: 'files(id, name)',
-        })
-        for (const file of files.data.files ?? []) {
-          // 移到主資料夾
-          await drive.files.update({
-            fileId: file.id!,
-            addParents: primaryId,
-            removeParents: extra.id!,
-            fields: 'id',
+    const folders = res.data.files ?? []
+
+    if (folders.length === 0) {
+      const folder = await drive.files.create({
+        requestBody: { name: FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
+        fields: 'id',
+      })
+      console.log('[Drive] Created folder')
+      return folder.data.id!
+    }
+
+    const primaryId = folders[0].id!
+
+    // 自動合併多餘資料夾
+    if (folders.length > 1) {
+      console.log(`[Drive] Found ${folders.length} folders, merging...`)
+      for (const extra of folders.slice(1)) {
+        try {
+          const files = await drive.files.list({
+            q: `'${extra.id}' in parents and trashed=false`,
+            fields: 'files(id, name)',
           })
-          console.log(`[Drive] Moved ${file.name} to primary folder`)
+          for (const file of files.data.files ?? []) {
+            await drive.files.update({
+              fileId: file.id!,
+              addParents: primaryId,
+              removeParents: extra.id!,
+              fields: 'id',
+            })
+          }
+          await drive.files.delete({ fileId: extra.id! })
+          console.log(`[Drive] Merged and deleted duplicate folder`)
+        } catch (e) {
+          console.error(`[Drive] Failed to merge folder:`, e)
         }
-        // 刪除多餘資料夾
-        await drive.files.delete({ fileId: extra.id! })
-        console.log(`[Drive] Deleted duplicate folder ${extra.id}`)
-      } catch (e) {
-        console.error(`[Drive] Failed to merge folder ${extra.id}:`, e)
       }
     }
-  }
 
-  return primaryId
+    return primaryId
+  })()
+
+  folderCache.set(accessToken, promise)
+
+  // 5 分鐘後清除 cache，避免 token 過期後還用舊 folder id
+  setTimeout(() => folderCache.delete(accessToken), 5 * 60 * 1000)
+
+  return promise
 }
 
 export async function readDriveFile(accessToken: string, filename: string): Promise<unknown> {
   try {
     const drive = getDriveClient(accessToken)
-    const folderId = await getOrCreateFolder(drive)
+    const folderId = await getOrCreateFolder(drive, accessToken)
 
     const res = await drive.files.list({
       q: `name='${filename}' and '${folderId}' in parents and trashed=false`,
@@ -89,7 +100,7 @@ export async function readDriveFile(accessToken: string, filename: string): Prom
 export async function writeDriveFile(accessToken: string, filename: string, data: unknown): Promise<void> {
   try {
     const drive = getDriveClient(accessToken)
-    const folderId = await getOrCreateFolder(drive)
+    const folderId = await getOrCreateFolder(drive, accessToken)
 
     const res = await drive.files.list({
       q: `name='${filename}' and '${folderId}' in parents and trashed=false`,
